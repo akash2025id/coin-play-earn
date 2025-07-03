@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Coin Lottery (Pro, Notification, Free Trial, Admin)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+  <style>
+    body {background:#181c28;color:#fff;font-family:sans-serif;}
+    .container{max-width:440px;margin:36px auto;background:#23263b;border-radius:13px;padding:30px 20px 20px 20px;box-shadow:0 0 32px #00ffe733;}
+    h2,h3{color:#00ffe7;text-align:center;}
+    input,button{width:100%;margin-bottom:10px;padding:9px;border-radius:5px;border:none;}
+    button{background:#00ffe7;color:#23263b;font-weight:bold;cursor:pointer;}
+    button:hover{background:#39ff14;}
+    .err{color:#ff6961;}
+    .success{color:#39ff14;}
+    .coin-area{display:flex;flex-wrap:wrap;gap:15px;justify-content:center;margin:18px 0;}
+    .coin{width:54px;height:54px;border-radius:50%;background:radial-gradient(circle,#ffe066 60%,#d1ac00 100%);box-shadow:0 2px 10px #0008;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:bold;color:#401801;cursor:pointer;border:4px solid #f7e37b;transition:.18s;}
+    .coin:active{box-shadow:0 0 1px #fff;background:radial-gradient(circle,#fffbe6 50%,#ffe066 100%);}
+    .coin.win{background:radial-gradient(circle,#a7f59e 60%,#39ff14 100%);color:#0d4128;border:4px solid #39ff14;}
+    .coin.lose{background:radial-gradient(circle,#f87171 60%,#dc2626 100%);color:#fff;border:4px solid #dc2626;}
+    .coin.lucky{background:radial-gradient(circle,#fde047 50%,#fde68a 100%);color:#a16207;border:4px solid #fde68a;}
+    .refer-box{background:#232c2e;border:1.2px dashed #fde047;border-radius:7px;padding:10px 14px 9px 14px;margin:10px 0 18px 0;font-size:15px;color:#fde047;word-break:break-all;text-align:center;box-shadow:0 2px 8px #fde68a55;}
+    .refer-btn{background:#fde047;color:#a16207;border:none;padding:4px 12px;border-radius:5px;cursor:pointer;font-size:13px;margin-left:7px;font-weight:600;}
+    .refer-btn:active{background:#fbbf24;}
+    .copy-box{background:#fff;color:#111;border:1.8px solid #fde68a;font-weight:bold;font-family:monospace;padding:6px 4px;border-radius:4px;display:inline-block;width:85%;margin:7px 0 4px 0;font-size:13px;text-align:center;user-select:all;letter-spacing:.2px;}
+    .footer{margin:36px 0 6px 0;text-align:center;color:#64748b;font-size:13px;opacity:.82;}
+    .logout-btn{background:#ff6961;color:#fff;}
+    .notif-btn{position:relative;background:#303860;color:#fff;width:38px;height:38px;padding:0;border-radius:50%;border:none;cursor:pointer;margin-right:10px;}
+    .notif-btn .notif-dot{position:absolute;top:6px;right:7px;background:#ff6961;color:#fff;font-weight:bold;font-size:13px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
+    .notif-list{background:#121629;border-radius:9px;padding:12px 10px;margin-bottom:14px;}
+    .notif-list p{margin:6px 0 3px 0;}
+    .admintbl{font-size:14px;}
+    .admintbl th,.admintbl td{border-bottom:1px solid #333;padding:5px;}
+    .admintbl th{background:#303860;}
+    .admintbl tr:nth-child(even){background:#22293b;}
+    .admin-btn{background:#303860;}
+    .admin-btn:hover{background:#39ff14;color:#23263b;}
+    .copy-num{background:#23263b;color:#fde047;border:1.2px dashed #fde047;padding:3px 10px;border-radius:4px;font-weight:bold;font-size:15px;margin:0 8px;}
+  </style>
+</head>
+<body>
+<div class="container" id="panel"></div>
+<div class="footer">&copy; 2025 | Created by <a href="https://github.com/akash2025id" target="_blank" style="color:#00ffe7">akash2025id</a></div>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAXST6UjzWglLm2acl7YSNp7Dmm7JdXa2I",
+  authDomain: "apps-on-club.firebaseapp.com",
+  projectId: "apps-on-club",
+  storageBucket: "apps-on-club.appspot.com",
+  messagingSenderId: "169336372843",
+  appId: "1:169336372843:web:b204f9ab7ce3f32662fb2e"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+const ADMIN_PASS = "admin102030";
+const REF_BONUS = 60;
+const COIN_PLAY_COST = 50;
+const COIN_WIN = 100;
+const BKASH_NUM = "01997631047";
+const FREE_TRIAL_LIMIT = 2;
+const FREE_TRIAL_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+
+let panel = document.getElementById("panel");
+let user = null, isAdmin = false;
+let urlParams = new URLSearchParams(window.location.search);
+let refcode = urlParams.get("ref") || "";
+let notifications = [];
+
+function setUser(u) { user = u; localStorage.setItem("user", JSON.stringify(u)); }
+function getUser() { return localStorage.getItem("user") ? JSON.parse(localStorage.getItem("user")) : null; }
+function logout() { user=null; isAdmin=false; localStorage.removeItem("user"); renderLogin(); }
+
+window.onload = function() {
+  user = getUser();
+  if (user && user.email) loadUser(user.email);
+  else renderLogin();
+};
+
+function renderLogin() {
+  panel.innerHTML = `
+    <h2>Coin Lottery</h2>
+    <div>
+      <input id="lemail" placeholder="Email" type="email">
+      <input id="lpw" placeholder="Password" type="password">
+      <button onclick="login()">Login</button>
+      <div style="margin-top: 8px;">
+        <span style="color:#00ffe7;cursor:pointer;" onclick="renderRegister()">New? Register</span> |
+        <span style="color:#00ffe7;cursor:pointer;" onclick="renderAdminLogin()">Admin</span>
+      </div>
+      <div id="lmsg"></div>
+    </div>
+  `;
+}
+function renderRegister() {
+  panel.innerHTML = `
+    <h2>Register</h2>
+    <div>
+      <input id="ruserid" placeholder="User ID (unique, only letters/numbers)" type="text" maxlength="18">
+      <input id="remail" placeholder="Email" type="email" value="">
+      <input id="rpw" placeholder="Password" type="password">
+      <input id="rref" placeholder="Referral User ID" type="text" value="${refcode||""}" ${refcode?'readonly':''} style="${refcode?'background:#ddd;color:#999;':''}">
+      <button onclick="register()">Register</button>
+      <div style="margin-top: 8px;">
+        <span style="color:#00ffe7;cursor:pointer;" onclick="renderLogin()">Login</span>
+      </div>
+      <div id="rmsg"></div>
+    </div>
+  `;
+}
+function renderAdminLogin() {
+  panel.innerHTML = `
+    <h2>Admin Panel</h2>
+    <input id="apass" type="password" placeholder="Admin Password">
+    <button onclick="adminLogin()">Login</button>
+    <div style="margin-top: 8px;">
+      <span style="color:#00ffe7;cursor:pointer;" onclick="renderLogin()">User</span>
+    </div>
+    <div id="amsg"></div>
+  `;
+}
+async function login() {
+  let email = document.getElementById("lemail").value.trim().toLowerCase();
+  let pw = document.getElementById("lpw").value;
+  let msg = document.getElementById("lmsg");
+  if (!email || !pw) return msg.innerHTML = `<span class="err">All required</span>`;
+  let docs = await db.collection("users").where("email","==",email).limit(1).get();
+  if (!docs.empty && docs.docs[0].data().password === pw) {
+    setUser(docs.docs[0].data());
+    loadUser(docs.docs[0].data().email);
+  } else msg.innerHTML = `<span class="err">Invalid credentials</span>`;
+}
+async function register() {
+  let userId = document.getElementById("ruserid").value.trim();
+  let email = document.getElementById("remail").value.trim().toLowerCase();
+  let pw = document.getElementById("rpw").value;
+  let ref = document.getElementById("rref").value.trim();
+  let msg = document.getElementById("rmsg");
+  if (!userId.match(/^[a-zA-Z0-9]+$/)) return msg.innerHTML = `<span class="err">User ID: only letters/numbers</span>`;
+  if (!email || !pw || !userId) return msg.innerHTML = `<span class="err">All required</span>`;
+  let exist = await db.collection("users").doc(userId).get();
+  if (exist.exists) return msg.innerHTML = `<span class="err">User ID exists</span>`;
+  let emailUsed = await db.collection("users").where("email","==",email).get();
+  if (!emailUsed.empty) return msg.innerHTML = `<span class="err">Email used</span>`;
+  let refBy = "";
+  let refDoc = null;
+  if (ref) {
+    refDoc = await db.collection("users").doc(ref).get();
+    if (refDoc.exists && ref !== userId) refBy = ref;
+    else return msg.innerHTML = `<span class="err">Invalid referral</span>`;
+  }
+  let u = { id:userId, email, password:pw, balance:0, refBy, refBonus:0, createdAt:Date.now(), freePlays:[], notifications:[] };
+  await db.collection("users").doc(userId).set(u);
+  // Referral bonus: instantly add
+  if (refBy && refDoc && refDoc.exists) {
+    await db.collection("users").doc(refBy).update({
+      balance: firebase.firestore.FieldValue.increment(REF_BONUS),
+      refBonus: firebase.firestore.FieldValue.increment(REF_BONUS)
+    });
+    // send notification
+    await db.collection("users").doc(refBy).update({
+      notifications: firebase.firestore.FieldValue.arrayUnion(
+        {msg:`আপনার রেফারেল বোনাস ${REF_BONUS} টাকা যোগ হয়েছে!`, time: Date.now(), read: false}
+      )
+    });
+  }
+  setUser(u);
+  loadUser(email);
+}
+function adminLogin() {
+  let pass = document.getElementById("apass").value;
+  if (pass === ADMIN_PASS) { isAdmin = true; renderAdminPanel(); }
+  else document.getElementById("amsg").innerHTML = `<span class="err">Wrong password</span>`;
+}
+async function loadUser(email) {
+  let docs = await db.collection("users").where("email","==",email).limit(1).get();
+  if (!docs.empty) { 
+    setUser(docs.docs[0].data());
+    renderUserPanel();
+    // Load notification
+    let snap = await db.collection("users").doc(user.id).get();
+    notifications = (snap.data().notifications||[]);
+    updateNotifUI();
+  }
+  else { logout(); }
+}
+function copyRefLink() {
+  let inp = document.getElementById("refurl");
+  inp.select();
+  document.execCommand("copy");
+  let btn = document.getElementById("copyref");
+  btn.textContent = "Copied!";
+  setTimeout(()=>btn.textContent="Copy",1000);
+}
+function renderUserPanel() {
+  let refUrl = location.origin + location.pathname + "?ref=" + encodeURIComponent(user.id);
+  panel.innerHTML = `
+    <div style="float:right;display:flex">
+      <button class="notif-btn" onclick="showNotifs()" id="notifBtn">
+        <span class="material-icons">🔔</span>
+        <span class="notif-dot" id="notifDot" style="display:none">0</span>
+      </button>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+    <h2>Welcome, ${user.email}</h2>
+    <div>User ID: <b>${user.id}</b> | Balance: <b id="userBal">${user.balance}tk</b> | Referral: <b>${user.refBonus}tk</b></div>
+    <div class="refer-box">
+      <b>Your Referral Link:</b><br>
+      <input class="copy-box" id="refurl" value="${refUrl}" readonly>
+      <button class="refer-btn" id="copyref" onclick="copyRefLink()">Copy</button>
+      <div style="font-size:12px;margin-top:3px;">Share to get <b>60tk</b> per new registration</div>
+    </div>
+    <div><button onclick="renderLottery()">🎲 Play Lottery</button> <button onclick="renderDeposit()">💳 Deposit</button> <button onclick="renderWithdraw()">Withdraw</button> <button onclick="renderLogs()">Logs</button></div>
+    <div id="mainpanel"></div>
+  `;
+  updateNotifUI();
+}
+function updateNotifUI() {
+  // update notif icon
+  let unread = (notifications||[]).filter(x=>!x.read).length;
+  let dot = document.getElementById("notifDot");
+  if (dot) {
+    dot.textContent = unread;
+    dot.style.display = unread>0?"block":"none";
+  }
+}
+function showNotifs() {
+  let mp = document.getElementById("mainpanel");
+  let html = `<div class="notif-list"><b>Notifications:</b>`;
+  if (!notifications || notifications.length === 0) html += `<p>No notification</p>`;
+  else notifications.slice().reverse().forEach(n=>{
+    html += `<p style="${n.read?'opacity:.6;':''}">${n.msg}<br><span style="color:#888;font-size:11px;">${new Date(n.time).toLocaleString()}</span></p>`;
+  });
+  html += `</div>`;
+  mp.innerHTML = html;
+  // mark all as read
+  db.collection("users").doc(user.id).update({
+    notifications: notifications.map(n=>({...n,read:true}))
+  });
+  notifications = notifications.map(n=>({...n,read:true}));
+  updateNotifUI();
+}
+function renderLottery() {
+  let mp = document.getElementById("mainpanel");
+  if (!mp) return;
+
+  let now = Date.now();
+  let userFreePlays = user.freePlays||[];
+  let lastWindow = Math.floor(now/FREE_TRIAL_INTERVAL);
+  userFreePlays = userFreePlays.filter(ts=>Math.floor(ts/FREE_TRIAL_INTERVAL)===lastWindow);
+
+  let freeLeft = FREE_TRIAL_LIMIT - userFreePlays.length;
+  let played = false, resultMsg = "", chosenIdx = null, lucky = null, isFree = false, canPlay = true, countdownMsg = "";
+
+  if (freeLeft<=0 && user.balance<COIN_PLAY_COST) {
+    canPlay = false;
+    // Next free time
+    let nextFree = (lastWindow+1)*FREE_TRIAL_INTERVAL;
+    let left = nextFree - now;
+    let h = Math.floor(left/3600000), m = Math.floor((left%3600000)/60000);
+    countdownMsg = `<div class="err">No play available.<br>Next free trial in ${h}h ${m}m</div>`;
+  }
+
+  function renderCoins() {
+    mp.innerHTML = `
+      <h3>🎲 Lottery Game</h3>
+      <div>
+        <b>Play cost:</b> <span>${freeLeft>0?"<span style='color:#39ff14'>FREE</span>":"50tk"}</span><br>
+        <b>Balance:</b> <span id="userBal">${user.balance}tk</span><br>
+        <b>Free left:</b> ${freeLeft} / ${FREE_TRIAL_LIMIT} (every 6hr)
+      </div>
+      <div class="coin-area" id="coinarea"></div>
+      <div id="lotteryMsg">${resultMsg||""}</div>
+      ${countdownMsg}
+    `;
+    let area = document.getElementById("coinarea");
+    for (let i=0;i<10;i++) {
+      let btn = document.createElement("div");
+      btn.className = "coin";
+      btn.innerText = i+1;
+      if (played) {
+        if (i===chosenIdx && chosenIdx===lucky) btn.classList.add("win");
+        else if (i===chosenIdx) btn.classList.add("lose");
+        else if (i===lucky) btn.classList.add("lucky");
+        btn.onclick = null;
+      } else {
+        btn.onclick = ()=>pickCoin(i);
+        btn.disabled = !canPlay;
+        if (!canPlay) btn.style.opacity = 0.5;
+      }
+      area.appendChild(btn);
+    }
+  }
+  async function pickCoin(idx) {
+    // free trial priority
+    let nFree = user.freePlays||[];
+    nFree = nFree.filter(ts=>Math.floor(ts/FREE_TRIAL_INTERVAL)===lastWindow);
+    let trial = nFree.length < FREE_TRIAL_LIMIT;
+    if (!trial && user.balance<COIN_PLAY_COST) {
+      resultMsg = `<span class="err">Insufficient balance</span>`;
+      renderCoins();
+      return;
+    }
+    lucky = Math.floor(Math.random()*10);
+    played = true;
+    let isWin = (idx === lucky);
+    let newBal = user.balance;
+    if (trial) {
+      nFree.push(now);
+    } else {
+      newBal -= COIN_PLAY_COST;
+    }
+    if (isWin) newBal += COIN_WIN;
+    await db.collection("users").doc(user.id).update({ balance: newBal, freePlays: nFree });
+    await db.collection("lottery_logs").add({
+      userId:user.id, email:user.email, idx, lucky, win: isWin, time: now, free: trial
+    });
+    user.balance = newBal;
+    user.freePlays = nFree;
+    setUser(user);
+    chosenIdx = idx;
+    resultMsg = isWin ? `<span class="success">Congrats! You won 100tk!</span>` : `<span class="err">Sorry! Coin #${lucky+1} had 100tk</span>`;
+    renderCoins();
+    document.getElementById("userBal").textContent = newBal+"tk";
+  }
+  renderCoins();
+}
+
+function renderDeposit() {
+  let mp = document.getElementById("mainpanel");
+  if (!mp) return;
+  mp.innerHTML = `
+    <h3>💳 Deposit</h3>
+    <div style="margin-bottom:8px;">
+      <span style="font-size:15px;">Send money to:</span>
+      <span class="copy-num" id="bkashnum">${BKASH_NUM}</span>
+      <button class="refer-btn" onclick="copyBkashNum()">Copy</button>
+    </div>
+    <input id="dpamt" type="number" placeholder="Amount (min 50)">
+    <input id="dpnum" type="text" placeholder="Your bKash/Nagad Number">
+    <button onclick="depositReq()">Deposit Request</button>
+    <div id="dpmsg"></div>
+  `;
+}
+function copyBkashNum() {
+  let inp = document.getElementById("bkashnum");
+  let tmp = document.createElement("input");
+  document.body.appendChild(tmp);
+  tmp.value = inp.textContent;
+  tmp.select();
+  document.execCommand("copy");
+  document.body.removeChild(tmp);
+}
+async function depositReq() {
+  let amt = parseInt(document.getElementById("dpamt").value);
+  let num = document.getElementById("dpnum").value.trim();
+  let msg = document.getElementById("dpmsg");
+  if (!amt || amt<50 || !num) return msg.innerHTML = `<span class="err">Valid info required</span>`;
+  await db.collection("deposit_requests").add({
+    userId:user.id, email:user.email, amount:amt, number:num, status:"pending", time:Date.now()
+  });
+  msg.innerHTML = `<span class="success">Request sent! Wait for admin approval.</span>`;
+}
+
+function renderWithdraw() {
+  let mp = document.getElementById("mainpanel");
+  if (!mp) return;
+  mp.innerHTML = `
+    <h3>Withdraw</h3>
+    <input id="wamt" type="number" placeholder="Amount (min 1000)">
+    <input id="wnum" type="text" placeholder="Your bKash/Nagad Number">
+    <button onclick="withdrawReq()">Withdraw Request</button>
+    <div id="wmsg"></div>
+  `;
+}
+async function withdrawReq() {
+  let amt = parseInt(document.getElementById("wamt").value);
+  let num = document.getElementById("wnum").value.trim();
+  let msg = document.getElementById("wmsg");
+  if (!amt || amt<1000 || !num) return msg.innerHTML = `<span class="err">Valid info required</span>`;
+  if (user.balance < amt) return msg.innerHTML = `<span class="err">Insufficient balance</span>`;
+  await db.collection("users").doc(user.id).update({ balance: firebase.firestore.FieldValue.increment(-amt) });
+  user.balance -= amt;
+  setUser(user);
+  await db.collection("withdraw_requests").add({
+    userId:user.id, email:user.email, amount:amt, number:num, status:"pending", time:Date.now()
+  });
+  msg.innerHTML = `<span class="success">Withdraw request sent! Wait for admin approval.</span>`;
+  document.getElementById("userBal").textContent = user.balance+"tk";
+}
+function renderLogs() {
+  let mp = document.getElementById("mainpanel");
+  if (!mp) return;
+  let html = `<h3>Logs</h3>`;
+  db.collection("lottery_logs").where("userId","==",user.id).orderBy("time","desc").limit(12).get().then(snap=>{
+    html += `<div class="log-list"><b>Lottery:</b>`;
+    snap.forEach(doc=>{
+      let d=doc.data();
+      html += `<div>${new Date(d.time).toLocaleString()}: Coin ${d.idx+1} - ${d.win?"WIN":"LOSE"} (Lucky: ${d.lucky+1})</div>`;
+    });
+    html += `</div>`;
+    mp.innerHTML = html;
+  });
+}
+// ---- Admin ----
+function renderAdminPanel() {
+  panel.innerHTML = `<h2>Admin Panel</h2>
+    <div>
+      <button onclick="adminTab('users')">Users</button>
+      <button onclick="adminTab('deposit')">Deposits</button>
+      <button onclick="adminTab('withdraw')">Withdraws</button>
+      <button onclick="adminTab('lottery')">Lottery Logs</button>
+      <button onclick="adminTab('notif')">Notify User</button>
+      <button onclick="logout()">Logout</button>
+    </div>
+    <div id="admintab"></div>
+  `;
+  adminTab("users");
+}
+function adminTab(tab) {
+  let t = document.getElementById("admintab");
+  if (tab === "users") {
+    db.collection("users").get().then(snap=>{
+      let html = `<table class="admintbl"><tr><th>UserID</th><th>Email</th><th>Balance</th><th>RefBonus</th><th>RefBy</th><th>AddTk</th></tr>`;
+      snap.forEach(doc=>{
+        let d=doc.data();
+        html += `<tr>
+          <td>${d.id}</td>
+          <td>${d.email}</td>
+          <td>${d.balance||0}</td>
+          <td>${d.refBonus||0}</td>
+          <td>${d.refBy||""}</td>
+          <td><button onclick="adminAddTk('${d.id}')">+50tk</button></td>
+        </tr>`;
+      });
+      html += `</table>`;
+      t.innerHTML = html;
+    });
+  }
+  if (tab === "deposit") {
+    db.collection("deposit_requests").orderBy("time","desc").limit(20).get().then(snap=>{
+      let html = `<table class="admintbl"><tr><th>UserID</th><th>Amount</th><th>Number</th><th>Status</th><th>Action</th></tr>`;
+      snap.forEach(doc=>{
+        let d=doc.data();
+        html += `<tr>
+          <td>${d.userId}</td>
+          <td>${d.amount}</td>
+          <td>${d.number}</td>
+          <td>${d.status}</td>
+          <td>
+            ${d.status==="pending"?`<button onclick="approveDeposit('${doc.id}','${d.userId}',${d.amount})">Approve</button>`:""}
+          </td>
+        </tr>`;
+      });
+      html += `</table>`;
+      t.innerHTML = html;
+    });
+  }
+  if (tab === "withdraw") {
+    db.collection("withdraw_requests").orderBy("time","desc").limit(20).get().then(snap=>{
+      let html = `<table class="admintbl"><tr><th>UserID</th><th>Amount</th><th>Number</th><th>Status</th><th>Action</th></tr>`;
+      snap.forEach(doc=>{
+        let d=doc.data();
+        html += `<tr>
+          <td>${d.userId}</td>
+          <td>${d.amount}</td>
+          <td>${d.number}</td>
+          <td>${d.status}</td>
+          <td>
+            ${d.status==="pending"?`
+              <button onclick="approveWithdraw('${doc.id}','${d.userId}',${d.amount})">Approve</button>
+              <button onclick="cancelWithdraw('${doc.id}','${d.userId}',${d.amount})">Cancel</button>
+            `:""}
+          </td>
+        </tr>`;
+      });
+      html += `</table>`;
+      t.innerHTML = html;
+    });
+  }
+  if (tab === "lottery") {
+    db.collection("lottery_logs").orderBy("time","desc").limit(30).get().then(snap=>{
+      let html = `<div class="log-list"><b>Lottery Logs:</b>`;
+      snap.forEach(doc=>{
+        let d=doc.data();
+        html += `<div>${d.userId} - Coin ${d.idx+1} - ${d.win?"WIN":"LOSE"} (Lucky: ${d.lucky+1})</div>`;
+      });
+      html += `</div>`;
+      t.innerHTML = html;
+    });
+  }
+  if (tab === "notif") {
+    db.collection("users").get().then(snap=>{
+      let html = `<h3>Send Notification</h3>
+        <select id="notifUser"><option value="">Select user</option>`;
+      snap.forEach(doc=>{
+        let d=doc.data();
+        html += `<option value="${d.id}">${d.id} (${d.email})</option>`;
+      });
+      html += `</select>
+        <textarea id="notifMsg" placeholder="Message" style="width:100%;min-height:60px;"></textarea>
+        <button onclick="sendNotif()">Send</button>
+        <div id="notifSendMsg"></div>
+      `;
+      t.innerHTML = html;
+    });
+  }
+}
+function adminAddTk(userId) {
+  db.collection("users").doc(userId).update({balance:firebase.firestore.FieldValue.increment(50)});
+  alert("Added 50tk.");
+}
+function approveDeposit(id,userId,amt) {
+  db.collection("deposit_requests").doc(id).update({status:"approved"});
+  db.collection("users").doc(userId).update({balance:firebase.firestore.FieldValue.increment(amt)});
+  db.collection("users").doc(userId).update({
+    notifications: firebase.firestore.FieldValue.arrayUnion({
+      msg:`আপনার ডিপোজিট ${amt} টাকা একাউন্টে যোগ হয়েছে!`, time: Date.now(), read: false
+    })
+  });
+  alert("Deposit approved.");
+  renderAdminPanel();
+}
+function approveWithdraw(id,userId,amt) {
+  db.collection("withdraw_requests").doc(id).update({status:"approved"});
+  db.collection("users").doc(userId).update({
+    notifications: firebase.firestore.FieldValue.arrayUnion({
+      msg:`আপনার উইথড্র ${amt} টাকা approved হয়েছে।`, time: Date.now(), read: false
+    })
+  });
+  alert("Withdraw approved.");
+  renderAdminPanel();
+}
+function cancelWithdraw(id,userId,amt) {
+  db.collection("withdraw_requests").doc(id).update({status:"cancelled"});
+  db.collection("users").doc(userId).update({balance:firebase.firestore.FieldValue.increment(amt)});
+  db.collection("users").doc(userId).update({
+    notifications: firebase.firestore.FieldValue.arrayUnion({
+      msg:`আপনার উইথড্র ${amt} টাকা বাতিল হয়েছে, টাকা ফেরত দেওয়া হয়েছে।`, time: Date.now(), read: false
+    })
+  });
+  alert("Withdraw cancelled, money returned.");
+  renderAdminPanel();
+}
+function sendNotif() {
+  let userId = document.getElementById("notifUser").value;
+  let msg = document.getElementById("notifMsg").value.trim();
+  let smsg = document.getElementById("notifSendMsg");
+  if (!userId || !msg) return smsg.innerHTML = `<span class="err">Select user and write message</span>`;
+  db.collection("users").doc(userId).update({
+    notifications: firebase.firestore.FieldValue.arrayUnion({
+      msg, time: Date.now(), read: false
+    })
+  });
+  smsg.innerHTML = `<span class="success">Notification sent!</span>`;
+}
+</script>
+</body>
+</html>
